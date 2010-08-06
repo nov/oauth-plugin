@@ -8,7 +8,16 @@
 #     :key=>"",
 #     :secret=>""
 #   },
+#   :google=>{
+#     :key=>"",
+#     :secret=>"",
+#     :scope=>"" # see http://code.google.com/apis/gdata/faq.html#AuthScopes
+#   },
 #   :agree2=>{
+#     :key=>"",
+#     :secret=>""
+#   },
+#   :fireeagle=>{
 #     :key=>"",
 #     :secret=>""
 #   },

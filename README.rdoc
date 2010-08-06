@@ -20,6 +20,21 @@ You need to install the oauth gem (0.3.5) which is the core OAuth ruby library. 
   
   sudo gem install oauth
 
+== Installation
+
+The plugin can now be installed as an gem from github, which is the easiest way to keep it up to date.
+
+  sudo gem install oauth-plugin
+  
+You should add the following in the gem dependency section of environment.rb
+
+  config.gem "oauth"
+  config.gem "oauth-plugin"
+
+Alternatively you can install it in vendors/plugin:
+
+  script/plugin install git://github.com/pelle/oauth-plugin.git
+
 The Generator currently creates code (in particular views) that only work in Rails 2.
 
 It should not be difficult to manually modify the code to work on Rails 1.2.x
@@ -114,30 +129,42 @@ The RequestToken contains the bulk of the changes so it's easiest to list it in 
 Make sure it looks like this:
 
   class RequestToken < OauthToken
-
+  
     attr_accessor :provided_oauth_verifier
-
+  
     def authorize!(user)
       return false if authorized?
       self.user = user
       self.authorized_at = Time.now
-      self.verifier=OAuth::Helper.generate_key(16)
+      self.verifier=OAuth::Helper.generate_key(16)[0,20] unless oauth10?
       self.save
     end
-
+  
     def exchange!
       return false unless authorized?
-      return false unless verifier==provided_oauth_verifier
-
+      return false unless oauth10? || verifier==provided_oauth_verifier
+    
       RequestToken.transaction do
         access_token = AccessToken.create(:user => user, :client_application => client_application)
         invalidate!
         access_token
       end
     end
-
+  
     def to_query
-      "#{super}&oauth_callback_confirmed=true"
+      if oauth10?
+        super
+      else
+        "#{super}&oauth_callback_confirmed=true"
+      end
+    end
+  
+    def oob?
+      self.callback_url=='oob'
+    end
+  
+    def oauth10?
+      (defined? OAUTH_10_SUPPORT) && OAUTH_10_SUPPORT && self.callback_url.blank?
     end
 
   end
@@ -147,30 +174,58 @@ Make sure it looks like this:
 All you need to do here is the change the authorize action to use the request_token callback url and add the oauth_verifier to the callback url. 
 
   def authorize
-      @token = RequestToken.find_by_token params[:oauth_token]
-      unless @token.invalidated?    
-        if request.post? 
-          if params[:authorize] == '1'
-            @token.authorize!(current_user)
-            redirect_url = @token.callback_url || @token.client_application.callback_url
-            if redirect_url
-              redirect_to "#{redirect_url}?oauth_token=#{@token.token}&oauth_verifier=#{@token.verifier}"
-            else
-              render :action => "authorize_success"
-            end
-          elsif params[:authorize] == "0"
-            @token.invalidate!
-            render :action => "authorize_failure"
+    @token = ::RequestToken.find_by_token params[:oauth_token]
+    unless @token.invalidated?    
+      if request.post? 
+        if params[:authorize] == '1'
+          @token.authorize!(current_user)
+          if @token.oauth10?
+            @redirect_url = params[:oauth_callback] || @token.client_application.callback_url
+          else
+            @redirect_url = @token.oob? ? @token.client_application.callback_url : @token.callback_url
           end
+        
+          if @redirect_url
+            if @token.oauth10?
+              redirect_to "#{@redirect_url}?oauth_token=#{@token.token}"
+            else
+              redirect_to "#{@redirect_url}?oauth_token=#{@token.token}&oauth_verifier=#{@token.verifier}"
+            end
+          else
+            render :action => "authorize_success"
+          end
+        elsif params[:authorize] == "0"
+          @token.invalidate!
+          render :action => "authorize_failure"
         end
-      else
-        render :action => "authorize_failure"
       end
+    else
+      render :action => "authorize_failure"
     end
+  end
+
+Alternatively if you haven't customized your controller you can replace the full controller with this:
+
+  require 'oauth/controllers/provider_controller'
+  class OauthController < ApplicationController
+    include OAuth::Controllers::ProviderController
+  end
+
+This way the controller will automatically include bug fixes in future versions of the plugin.
 
 The rest of the changes are in the plugin and will be automatically be included.
 
 *Note* OAuth 1.0a removes support for callback url's passed to the authorize page, clients must either define a callback url in their client application or pass one on the token request page.
+
+=== Supporting old OAuth 1.0 clients
+
+If you absolutely have to support older OAuth 1.0 clients on an optional basis, we now include a switch to turn it back on.
+
+For legacy OAUTH 1.0 support add the following constant in your environment.rb
+
+  OAUTH_10_SUPPORT = true
+
+Note, you should only do this if you really positively require to support old OAuth1.0 clients. There is a serious security issue with this.
 
 == Protecting your actions
 
@@ -264,7 +319,7 @@ This allows you to add a has_one association in your user model:
 
 And you could do:
 
-  @location=@user.fire_eagle.client.get "/api/0.1/user.json"
+  @location=@user.fire_eagle.client.location
 
 The client method gives you a OAuth::AccessToken which you can use to perform rest operations on the client site - see http://oauth.rubyforge.org/rdoc/classes/OAuth/AccessToken.html
 
@@ -272,9 +327,10 @@ The client method gives you a OAuth::AccessToken which you can use to perform re
 
 Before creating the FireEagleToken model the plugin checks if a class already exists by that name or if we provide an api wrapper for it. This allows you to create a better token model that uses an existing ruby gem.
 
-Currently we provide the following untested tokens:
+Currently we provide the following semi tested tokens wrappers:
 
-* Twitter (Will work when the twitter gem is updated to support OAuth 0.3.5)
+* FireEagle
+* Twitter
 * Agree2
 
 These can be found in lib/oauth/models/consulers/services. Contributions will be warmly accepted for your favorite OAuth service.

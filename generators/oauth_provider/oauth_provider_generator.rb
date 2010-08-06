@@ -33,7 +33,7 @@ class OauthProviderGenerator < Rails::Generator::Base
                                                       "#{controller_class_name}ClientsHelper"
       m.class_collisions class_path,                  "ClientApplication","OauthNonce","RequestToken","AccessToken","OauthToken"
 
-      # Controller, helper, views, and test directories.
+      # Controller, model, views, and test directories.
       m.directory File.join('app/models', class_path)
       m.directory File.join('app/controllers', controller_class_path)
       m.directory File.join('app/views', controller_class_path, controller_file_name)
@@ -53,6 +53,7 @@ class OauthProviderGenerator < Rails::Generator::Base
       m.route_name 'request_token', '/oauth/request_token',:controller=>'oauth',:action=>'request_token'
       m.route_name 'access_token', '/oauth/access_token',:controller=>'oauth',:action=>'access_token'
       m.route_name 'test_request', '/oauth/test_request',:controller=>'oauth',:action=>'test_request'
+
       m.route_resources "#{controller_file_name}_clients".to_sym
       
       if !options[:test_unit]
